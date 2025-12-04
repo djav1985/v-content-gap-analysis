@@ -1,5 +1,6 @@
 """Text cleaning and normalization."""
 import re
+from typing import Optional
 from app.utils.text import normalize_whitespace, clean_html_remnants
 from app.utils.logger import get_logger
 
