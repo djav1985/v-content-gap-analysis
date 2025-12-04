@@ -337,7 +337,7 @@ async def main():
         # Crawl primary site
         logger.info("Crawling primary site...")
         primary_page_ids = await crawl_and_extract(
-            primary_urls[:50],  # Limit for demo
+            primary_urls[:config.max_pages_per_site],
             is_primary=True,
             db_path=config.database.path,
             config=config
@@ -357,7 +357,7 @@ async def main():
             
             # Crawl competitor
             competitor_page_ids = await crawl_and_extract(
-                competitor_urls[:50],  # Limit for demo
+                competitor_urls[:config.max_pages_per_site],
                 is_primary=False,
                 db_path=config.database.path,
                 config=config

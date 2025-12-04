@@ -5,6 +5,7 @@ site: "https://vontainment.com/sitemap.xml"
 chunk_size: 1500
 max_chunks_per_page: 10
 similarity_threshold: 0.45
+max_pages_per_site: 50  # Limit pages analyzed per site
 
 # Crawling configuration
 max_concurrent_requests: 10

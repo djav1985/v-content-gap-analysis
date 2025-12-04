@@ -6,7 +6,7 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def count_tokens(text: str, model: str = "gpt-4") -> int:
+def count_tokens(text: str, model: str = "text-embedding-3-large") -> int:
     """
     Count tokens in text.
     
@@ -18,7 +18,8 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
         Token count
     """
     try:
-        encoding = tiktoken.encoding_for_model(model)
+        # Use cl100k_base encoding for embedding models
+        encoding = tiktoken.get_encoding("cl100k_base")
         return len(encoding.encode(text))
     except Exception:
         # Fallback to simple approximation
@@ -29,7 +30,7 @@ def chunk_text(
     text: str,
     chunk_size: int = 1500,
     overlap: int = 200,
-    model: str = "gpt-4"
+    model: str = "text-embedding-3-large"
 ) -> List[str]:
     """
     Split text into chunks based on token count.
@@ -38,7 +39,7 @@ def chunk_text(
         text: Input text
         chunk_size: Target chunk size in tokens
         overlap: Overlap between chunks in tokens
-        model: Model name for tokenization
+        model: Model name for tokenization (uses cl100k_base encoding)
         
     Returns:
         List of text chunks
@@ -47,7 +48,8 @@ def chunk_text(
         return []
     
     try:
-        encoding = tiktoken.encoding_for_model(model)
+        # Use cl100k_base encoding for embedding models
+        encoding = tiktoken.get_encoding("cl100k_base")
         tokens = encoding.encode(text)
     except Exception:
         # Fallback: split by characters
@@ -89,7 +91,7 @@ def chunk_text(
 def chunk_by_paragraphs(
     text: str,
     target_chunk_size: int = 1500,
-    model: str = "gpt-4"
+    model: str = "text-embedding-3-large"
 ) -> List[str]:
     """
     Split text into chunks by paragraphs, respecting target size.
@@ -97,7 +99,7 @@ def chunk_by_paragraphs(
     Args:
         text: Input text
         target_chunk_size: Target chunk size in tokens
-        model: Model name for tokenization
+        model: Model name for tokenization (uses cl100k_base encoding)
         
     Returns:
         List of text chunks

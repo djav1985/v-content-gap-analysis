@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     site: str
     chunk_size: int = 1500
     max_chunks_per_page: int = 10
+    max_pages_per_site: int = 50
     similarity_threshold: float = 0.45
     max_concurrent_requests: int = 10
     request_timeout: int = 30
