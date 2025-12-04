@@ -1,0 +1,33 @@
+# Primary site configuration
+site: "https://vontainment.com/sitemap.xml"
+
+# Processing configuration
+chunk_size: 1500
+max_chunks_per_page: 10
+similarity_threshold: 0.45
+
+# Crawling configuration
+max_concurrent_requests: 10
+request_timeout: 30
+retry_attempts: 3
+user_agent: "SEO-Gap-Analysis-Agent/1.0"
+
+# Models configuration
+models:
+  embeddings: "text-embedding-3-large"
+  llm: "gpt-4o-mini"
+
+# Database configuration
+database:
+  path: "data/pages.db"
+
+# Output configuration
+output:
+  json_report: "reports/gap_report.json"
+  markdown_report: "reports/gap_report.md"
+  
+# Analysis thresholds
+thresholds:
+  thin_content_ratio: 3.0
+  min_similarity: 0.45
+  cluster_min_samples: 2
