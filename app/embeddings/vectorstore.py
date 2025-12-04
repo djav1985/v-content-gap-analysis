@@ -1,0 +1,174 @@
+"""Vector storage and retrieval using SQLite."""
+import numpy as np
+import aiosqlite
+from typing import List, Optional, Tuple
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+async def store_embedding(
+    db_path: str,
+    chunk_id: int,
+    embedding: np.ndarray,
+    model: str
+) -> None:
+    """
+    Store embedding in database.
+    
+    Args:
+        db_path: Path to database
+        chunk_id: Chunk ID
+        embedding: Embedding vector
+        model: Model name
+    """
+    async with aiosqlite.connect(db_path) as db:
+        embedding_blob = embedding.tobytes()
+        
+        await db.execute("""
+            INSERT INTO embeddings (chunk_id, embedding, model)
+            VALUES (?, ?, ?)
+            ON CONFLICT(chunk_id) DO UPDATE SET
+                embedding=excluded.embedding,
+                model=excluded.model,
+                created_at=CURRENT_TIMESTAMP
+        """, (chunk_id, embedding_blob, model))
+        
+        await db.commit()
+
+
+async def store_embeddings_batch(
+    db_path: str,
+    chunk_ids: List[int],
+    embeddings: List[np.ndarray],
+    model: str
+) -> None:
+    """
+    Store multiple embeddings in database.
+    
+    Args:
+        db_path: Path to database
+        chunk_ids: List of chunk IDs
+        embeddings: List of embedding vectors
+        model: Model name
+    """
+    async with aiosqlite.connect(db_path) as db:
+        data = [
+            (chunk_id, embedding.tobytes(), model)
+            for chunk_id, embedding in zip(chunk_ids, embeddings)
+            if embedding is not None
+        ]
+        
+        await db.executemany("""
+            INSERT INTO embeddings (chunk_id, embedding, model)
+            VALUES (?, ?, ?)
+            ON CONFLICT(chunk_id) DO UPDATE SET
+                embedding=excluded.embedding,
+                model=excluded.model,
+                created_at=CURRENT_TIMESTAMP
+        """, data)
+        
+        await db.commit()
+        logger.info(f"Stored {len(data)} embeddings")
+
+
+async def get_embedding(db_path: str, chunk_id: int) -> Optional[np.ndarray]:
+    """
+    Retrieve embedding from database.
+    
+    Args:
+        db_path: Path to database
+        chunk_id: Chunk ID
+        
+    Returns:
+        Embedding vector or None
+    """
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute(
+            "SELECT embedding FROM embeddings WHERE chunk_id = ?",
+            (chunk_id,)
+        )
+        row = await cursor.fetchone()
+        
+        if row:
+            return np.frombuffer(row[0], dtype=np.float32)
+        return None
+
+
+async def get_all_embeddings(
+    db_path: str,
+    is_primary: Optional[bool] = None
+) -> List[Tuple[int, int, np.ndarray, str]]:
+    """
+    Retrieve all embeddings with metadata.
+    
+    Args:
+        db_path: Path to database
+        is_primary: Filter by primary site if specified
+        
+    Returns:
+        List of tuples: (chunk_id, page_id, embedding, url)
+    """
+    async with aiosqlite.connect(db_path) as db:
+        if is_primary is not None:
+            query = """
+                SELECT e.chunk_id, c.page_id, e.embedding, p.url
+                FROM embeddings e
+                JOIN chunks c ON e.chunk_id = c.id
+                JOIN pages p ON c.page_id = p.id
+                WHERE p.is_primary = ?
+            """
+            cursor = await db.execute(query, (is_primary,))
+        else:
+            query = """
+                SELECT e.chunk_id, c.page_id, e.embedding, p.url
+                FROM embeddings e
+                JOIN chunks c ON e.chunk_id = c.id
+                JOIN pages p ON c.page_id = p.id
+            """
+            cursor = await db.execute(query)
+        
+        rows = await cursor.fetchall()
+        
+        results = [
+            (row[0], row[1], np.frombuffer(row[2], dtype=np.float32), row[3])
+            for row in rows
+        ]
+        
+        logger.info(f"Retrieved {len(results)} embeddings")
+        return results
+
+
+async def store_chunk(
+    db_path: str,
+    page_id: int,
+    chunk_index: int,
+    content: str,
+    token_count: int
+) -> int:
+    """
+    Store content chunk in database.
+    
+    Args:
+        db_path: Path to database
+        page_id: Page ID
+        chunk_index: Chunk index
+        content: Chunk content
+        token_count: Token count
+        
+    Returns:
+        Chunk ID
+    """
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute("""
+            INSERT INTO chunks (page_id, chunk_index, content, token_count)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(page_id, chunk_index) DO UPDATE SET
+                content=excluded.content,
+                token_count=excluded.token_count
+        """, (page_id, chunk_index, content, token_count))
+        
+        chunk_id = cursor.lastrowid
+        await db.commit()
+        
+        return chunk_id
