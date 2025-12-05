@@ -2,8 +2,10 @@
 import aiosqlite
 from pathlib import Path
 from typing import Optional
+from pydantic import ValidationError
 
 from app.utils.logger import get_logger
+from app.utils.models import PageModel, GapModel
 
 logger = get_logger(__name__)
 
@@ -117,7 +119,27 @@ async def store_page(
         
     Returns:
         Page ID
+        
+    Raises:
+        ValidationError: If page data is invalid
     """
+    # Validate page data before storing
+    try:
+        page_model = PageModel(
+            url=url,
+            domain=domain,
+            is_primary=is_primary,
+            title=title,
+            description=description,
+            h1=h1,
+            content_text=content_text,
+            word_count=word_count,
+            schema_data=schema_data
+        )
+    except ValidationError as e:
+        logger.error(f"Page validation failed for {url}: {e}")
+        raise
+    
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute("""
             INSERT INTO pages (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data)

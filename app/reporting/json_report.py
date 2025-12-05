@@ -3,7 +3,10 @@ import json
 from datetime import datetime
 from typing import Dict, Any
 from pathlib import Path
+from pydantic import ValidationError
+
 from app.utils.logger import get_logger
+from app.utils.models import ReportModel
 
 logger = get_logger(__name__)
 
@@ -26,7 +29,23 @@ def generate_json_report(
         quick_wins: Quick win opportunities
         config: Configuration used
         output_path: Output file path
+        
+    Raises:
+        ValidationError: If report data is invalid
     """
+    # Validate report data before writing
+    try:
+        report_model = ReportModel(
+            gaps=gaps,
+            summary=summary,
+            action_plan=action_plan,
+            quick_wins=quick_wins,
+            config=config
+        )
+    except ValidationError as e:
+        logger.error(f"Report validation failed: {e}")
+        raise
+    
     report = {
         'metadata': {
             'generated_at': datetime.now().isoformat(),

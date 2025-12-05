@@ -2,7 +2,10 @@
 import numpy as np
 import aiosqlite
 from typing import List, Optional, Tuple
+from pydantic import ValidationError
+
 from app.utils.logger import get_logger
+from app.utils.models import ChunkModel, EmbeddingModel
 
 logger = get_logger(__name__)
 
@@ -158,7 +161,22 @@ async def store_chunk(
         
     Returns:
         Chunk ID
+        
+    Raises:
+        ValidationError: If chunk data is invalid
     """
+    # Validate chunk data before storing
+    try:
+        chunk_model = ChunkModel(
+            page_id=page_id,
+            chunk_index=chunk_index,
+            content=content,
+            token_count=token_count
+        )
+    except ValidationError as e:
+        logger.error(f"Chunk validation failed: {e}")
+        raise
+    
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute("""
             INSERT INTO chunks (page_id, chunk_index, content, token_count)
