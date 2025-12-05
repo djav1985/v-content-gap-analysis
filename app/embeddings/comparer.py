@@ -7,6 +7,9 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Constants
+EPSILON = 1e-10  # Small value to prevent division by zero in normalization
+
 
 def compute_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
     """
@@ -20,8 +23,8 @@ def compute_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         Similarity score between 0 and 1
     """
     # Normalize embeddings before computing similarity
-    emb1 = embedding1 / (np.linalg.norm(embedding1) + 1e-10)
-    emb2 = embedding2 / (np.linalg.norm(embedding2) + 1e-10)
+    emb1 = embedding1 / (np.linalg.norm(embedding1) + EPSILON)
+    emb2 = embedding2 / (np.linalg.norm(embedding2) + EPSILON)
     
     # Reshape for sklearn
     emb1 = emb1.reshape(1, -1)
@@ -51,12 +54,12 @@ def find_most_similar(
         return []
     
     # Normalize query embedding
-    query = query_embedding / (np.linalg.norm(query_embedding) + 1e-10)
+    query = query_embedding / (np.linalg.norm(query_embedding) + EPSILON)
     query = query.reshape(1, -1)
     
     # Normalize all embeddings
     embedding_matrix = np.array(embeddings)
-    norms = np.linalg.norm(embedding_matrix, axis=1, keepdims=True) + 1e-10
+    norms = np.linalg.norm(embedding_matrix, axis=1, keepdims=True) + EPSILON
     embedding_matrix = embedding_matrix / norms
     
     similarities = cosine_similarity(query, embedding_matrix)[0]
@@ -122,8 +125,8 @@ def compute_similarity_matrix(
     matrix1 = np.array(embeddings1)
     matrix2 = np.array(embeddings2)
     
-    norms1 = np.linalg.norm(matrix1, axis=1, keepdims=True) + 1e-10
-    norms2 = np.linalg.norm(matrix2, axis=1, keepdims=True) + 1e-10
+    norms1 = np.linalg.norm(matrix1, axis=1, keepdims=True) + EPSILON
+    norms2 = np.linalg.norm(matrix2, axis=1, keepdims=True) + EPSILON
     
     matrix1 = matrix1 / norms1
     matrix2 = matrix2 / norms2

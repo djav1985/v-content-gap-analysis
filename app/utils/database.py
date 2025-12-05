@@ -331,6 +331,16 @@ async def store_gaps_batch(
             logger.error(f"Gap validation failed: {e}")
             raise
     
+    # Convert priority string to enum value
+    def get_priority_value(priority_str: Optional[str]) -> int:
+        """Convert priority string to database integer value."""
+        priority_map = {
+            'high': Priority.HIGH,
+            'medium': Priority.MEDIUM,
+            'low': Priority.LOW
+        }
+        return priority_map.get(priority_str, Priority.LOW)
+    
     async with aiosqlite.connect(db_path) as db:
         await db.executemany("""
             INSERT INTO gaps (competitor_url, gap_type, similarity_score, closest_match_url, analysis, priority)
@@ -342,7 +352,7 @@ async def store_gaps_batch(
                 gap.get('similarity_score'),
                 gap.get('closest_match_url'),
                 gap.get('analysis'),
-                Priority.HIGH if gap.get('priority') == 'high' else (Priority.MEDIUM if gap.get('priority') == 'medium' else Priority.LOW)
+                get_priority_value(gap.get('priority'))
             )
             for gap in gaps
         ])

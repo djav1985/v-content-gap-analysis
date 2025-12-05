@@ -8,6 +8,9 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Constants
+CHARS_PER_TOKEN_APPROX = 4  # Approximate character to token ratio for fallback
+
 
 def count_tokens(text: str, model: str = "gpt-4o-mini") -> int:
     """
@@ -26,7 +29,7 @@ def count_tokens(text: str, model: str = "gpt-4o-mini") -> int:
         return len(encoding.encode(text))
     except Exception:
         # Fallback to simple approximation
-        return len(text) // 4
+        return len(text) // CHARS_PER_TOKEN_APPROX
 
 
 async def summarize_content(

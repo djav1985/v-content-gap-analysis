@@ -8,6 +8,9 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Constants
+DEFAULT_PER_HOST_LIMIT = 5  # Default maximum concurrent connections per host
+
 
 class SessionManager:
     """Manages shared aiohttp session with per-host limits."""
@@ -177,7 +180,7 @@ async def fetch_urls_concurrent(
     if session_manager is None:
         session_manager = SessionManager(
             max_connections=max_concurrent * 2,
-            per_host_limit=min(max_concurrent, 5),
+            per_host_limit=min(max_concurrent, DEFAULT_PER_HOST_LIMIT),
             timeout=timeout
         )
     

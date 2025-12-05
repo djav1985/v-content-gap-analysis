@@ -7,6 +7,11 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Constants
+EPSILON = 1e-10  # Small value to prevent division by zero in normalization
+MAX_RETRY_WAIT = 60  # Maximum wait time between retries (seconds)
+API_ERROR_WAIT = 30  # Wait time for API errors (seconds)
+
 
 async def generate_embedding(
     text: str,
@@ -43,13 +48,13 @@ async def generate_embedding(
             embedding = np.array(response.data[0].embedding, dtype=np.float32)
             
             # Normalize embedding
-            embedding = embedding / (np.linalg.norm(embedding) + 1e-10)
+            embedding = embedding / (np.linalg.norm(embedding) + EPSILON)
             
             logger.debug(f"Generated embedding of dimension {len(embedding)}")
             return embedding
             
         except RateLimitError as e:
-            wait_time = min(2 ** attempt, 60)  # Exponential backoff, max 60s
+            wait_time = min(2 ** attempt, MAX_RETRY_WAIT)  # Exponential backoff, capped
             logger.warning(f"Rate limit hit, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
             if attempt < max_retries - 1:
                 await asyncio.sleep(wait_time)
@@ -58,7 +63,7 @@ async def generate_embedding(
                 return None
                 
         except (APIError, APIConnectionError) as e:
-            wait_time = min(2 ** attempt, 30)
+            wait_time = min(2 ** attempt, API_ERROR_WAIT)
             logger.warning(f"API error: {e}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
             if attempt < max_retries - 1:
                 await asyncio.sleep(wait_time)
@@ -129,14 +134,14 @@ async def generate_embeddings_batch(
                     for idx, embedding_data in zip(indices, response.data):
                         embedding = np.array(embedding_data.embedding, dtype=np.float32)
                         # Normalize embedding
-                        embedding = embedding / (np.linalg.norm(embedding) + 1e-10)
+                        embedding = embedding / (np.linalg.norm(embedding) + EPSILON)
                         batch_embeddings[idx] = embedding
                     
                     logger.info(f"Generated {len(valid_texts)} embeddings (batch starting at {batch_start})")
                     return batch_embeddings
                     
                 except RateLimitError as e:
-                    wait_time = min(2 ** attempt, 60)
+                    wait_time = min(2 ** attempt, MAX_RETRY_WAIT)
                     logger.warning(f"Rate limit hit for batch {batch_start}, waiting {wait_time}s")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(wait_time)
@@ -145,7 +150,7 @@ async def generate_embeddings_batch(
                         return [None] * len(batch_texts)
                         
                 except (APIError, APIConnectionError) as e:
-                    wait_time = min(2 ** attempt, 30)
+                    wait_time = min(2 ** attempt, API_ERROR_WAIT)
                     logger.warning(f"API error for batch {batch_start}: {e}, retrying in {wait_time}s")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(wait_time)
