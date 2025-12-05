@@ -42,6 +42,8 @@ class DatabasePool:
         
         if len(self._connections) < self.max_connections:
             conn = await aiosqlite.connect(self.db_path)
+            # Enable foreign key constraints
+            await conn.execute("PRAGMA foreign_keys = ON")
             self._connections.append(conn)
             return conn
         
@@ -67,7 +69,7 @@ class DatabasePool:
 @asynccontextmanager
 async def get_db_connection(db_path: str):
     """
-    Context manager for database connections.
+    Context manager for database connections with foreign keys enabled.
     
     Args:
         db_path: Path to database
@@ -77,6 +79,8 @@ async def get_db_connection(db_path: str):
     """
     conn = await aiosqlite.connect(db_path)
     try:
+        # Enable foreign key constraints
+        await conn.execute("PRAGMA foreign_keys = ON")
         yield conn
     finally:
         await conn.close()
@@ -93,6 +97,8 @@ async def init_database(db_path: str) -> None:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         # Pages table
         await db.execute("""
             CREATE TABLE IF NOT EXISTS pages (
@@ -213,6 +219,8 @@ async def store_page(
         raise
     
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         # First, try to get existing page ID
         cursor = await db.execute("SELECT id FROM pages WHERE url = ?", (url,))
         row = await cursor.fetchone()
@@ -250,6 +258,8 @@ async def get_page_id(db_path: str, url: str) -> Optional[int]:
         Page ID or None
     """
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         cursor = await db.execute("SELECT id FROM pages WHERE url = ?", (url,))
         row = await cursor.fetchone()
         return row[0] if row else None
@@ -284,6 +294,8 @@ async def store_pages_batch(
     
     page_ids = []
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         for page in validated_pages:
             # Check if page exists
             cursor = await db.execute("SELECT id FROM pages WHERE url = ?", (page['url'],))
@@ -365,6 +377,8 @@ async def store_gaps_batch(
         return priority_map.get(priority_str, Priority.LOW)
     
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         await db.executemany("""
             INSERT INTO gaps (competitor_url, gap_type, similarity_score, closest_match_url, analysis, priority)
             VALUES (?, ?, ?, ?, ?, ?)

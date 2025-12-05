@@ -87,9 +87,11 @@ def extract_schema(html: str) -> Optional[str]:
     schemas = []
     for script in schema_scripts:
         try:
-            schema_data = json.loads(script.string)
-            schemas.append(schema_data)
-        except json.JSONDecodeError:
+            # Guard against None or whitespace-only content
+            if script.string and script.string.strip():
+                schema_data = json.loads(script.string)
+                schemas.append(schema_data)
+        except (json.JSONDecodeError, TypeError, AttributeError):
             continue
     
     if schemas:
