@@ -22,7 +22,7 @@ async def detect_missing_pages(
         List of missing page gaps (deduplicated)
     """
     gaps = []
-    seen_urls: Set[str] = set()  # Track URLs to avoid duplicates
+    processed_urls: Set[str] = set()  # Track URLs to avoid duplicates
     
     async with aiosqlite.connect(db_path) as db:
         # Get all gaps below threshold
@@ -40,10 +40,10 @@ async def detect_missing_pages(
             competitor_url = row[0]
             
             # Skip if we've already processed this URL
-            if competitor_url in seen_urls:
+            if competitor_url in processed_urls:
                 continue
             
-            seen_urls.add(competitor_url)
+            processed_urls.add(competitor_url)
             
             # Calculate priority based on similarity score
             similarity_score = row[2]
@@ -82,7 +82,7 @@ async def detect_thin_content(
         List of thin content gaps (deduplicated by primary URL)
     """
     gaps = []
-    seen_primary_urls: Set[str] = set()
+    processed_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
         # Compare word counts
@@ -108,10 +108,10 @@ async def detect_thin_content(
             primary_url = row[0]
             
             # Only keep the worst case for each primary URL
-            if primary_url in seen_primary_urls:
+            if primary_url in processed_urls:
                 continue
             
-            seen_primary_urls.add(primary_url)
+            processed_urls.add(primary_url)
             
             ratio = row[4]
             
@@ -153,7 +153,7 @@ async def detect_metadata_gaps(db_path: str) -> List[Dict[str, Any]]:
         List of metadata gaps (deduplicated by URL)
     """
     gaps = []
-    seen_urls: Set[str] = set()
+    processed_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
         # Find pages with missing metadata
@@ -215,7 +215,7 @@ async def detect_schema_gaps(db_path: str) -> List[Dict[str, Any]]:
         List of schema gaps (deduplicated by URL)
     """
     gaps = []
-    seen_urls: Set[str] = set()
+    processed_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
         # Find primary pages without schema
@@ -238,10 +238,10 @@ async def detect_schema_gaps(db_path: str) -> List[Dict[str, Any]]:
         for row in rows:
             url = row[0]
             
-            if url in seen_urls:
+            if url in processed_urls:
                 continue
             
-            seen_urls.add(url)
+            processed_urls.add(url)
             
             gaps.append({
                 'type': 'schema_gap',

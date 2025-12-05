@@ -425,6 +425,15 @@ async def main():
                 db_path=config.database.path,
                 config=config
             )
+            
+            if not primary_page_ids:
+                log_with_context(
+                    logger, logging.ERROR,
+                    "No primary pages were successfully crawled - cannot perform gap analysis",
+                    error_type='no_primary_content'
+                )
+                logger.error("Gap analysis requires at least some primary site content")
+                return
         except Exception as e:
             log_with_context(
                 logger, logging.ERROR,
@@ -432,8 +441,8 @@ async def main():
                 error_type='crawl_error',
                 exc_info=True
             )
-            # Continue with what we have
-            primary_page_ids = []
+            logger.error("Cannot continue without primary site content")
+            return
         
         # Process primary content
         if primary_page_ids:
