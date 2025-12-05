@@ -213,22 +213,28 @@ async def store_page(
         raise
     
     async with aiosqlite.connect(db_path) as db:
-        cursor = await db.execute("""
-            INSERT INTO pages (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(url) DO UPDATE SET
-                title=excluded.title,
-                description=excluded.description,
-                h1=excluded.h1,
-                content_text=excluded.content_text,
-                word_count=excluded.word_count,
-                schema_data=excluded.schema_data,
-                last_crawled=CURRENT_TIMESTAMP
-        """, (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data))
+        # First, try to get existing page ID
+        cursor = await db.execute("SELECT id FROM pages WHERE url = ?", (url,))
+        row = await cursor.fetchone()
         
-        page_id = cursor.lastrowid
+        if row:
+            # Update existing page
+            page_id = row[0]
+            await db.execute("""
+                UPDATE pages SET
+                    title=?, description=?, h1=?, content_text=?,
+                    word_count=?, schema_data=?, last_crawled=CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (title, description, h1, content_text, word_count, schema_data, page_id))
+        else:
+            # Insert new page
+            cursor = await db.execute("""
+                INSERT INTO pages (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data))
+            page_id = cursor.lastrowid
+        
         await db.commit()
-        
         return page_id
 
 
@@ -279,29 +285,46 @@ async def store_pages_batch(
     page_ids = []
     async with aiosqlite.connect(db_path) as db:
         for page in validated_pages:
-            cursor = await db.execute("""
-                INSERT INTO pages (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(url) DO UPDATE SET
-                    title=excluded.title,
-                    description=excluded.description,
-                    h1=excluded.h1,
-                    content_text=excluded.content_text,
-                    word_count=excluded.word_count,
-                    schema_data=excluded.schema_data,
-                    last_crawled=CURRENT_TIMESTAMP
-            """, (
-                page['url'],
-                page['domain'],
-                page['is_primary'],
-                page.get('title'),
-                page.get('description'),
-                page.get('h1'),
-                page.get('content_text'),
-                page.get('word_count'),
-                page.get('schema_data')
-            ))
-            page_ids.append(cursor.lastrowid)
+            # Check if page exists
+            cursor = await db.execute("SELECT id FROM pages WHERE url = ?", (page['url'],))
+            row = await cursor.fetchone()
+            
+            if row:
+                # Update existing page
+                page_id = row[0]
+                await db.execute("""
+                    UPDATE pages SET
+                        title=?, description=?, h1=?, content_text=?,
+                        word_count=?, schema_data=?, last_crawled=CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (
+                    page.get('title'),
+                    page.get('description'),
+                    page.get('h1'),
+                    page.get('content_text'),
+                    page.get('word_count'),
+                    page.get('schema_data'),
+                    page_id
+                ))
+            else:
+                # Insert new page
+                cursor = await db.execute("""
+                    INSERT INTO pages (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    page['url'],
+                    page['domain'],
+                    page['is_primary'],
+                    page.get('title'),
+                    page.get('description'),
+                    page.get('h1'),
+                    page.get('content_text'),
+                    page.get('word_count'),
+                    page.get('schema_data')
+                ))
+                page_id = cursor.lastrowid
+            
+            page_ids.append(page_id)
         
         await db.commit()
         logger.info(f"Stored {len(page_ids)} pages in batch")

@@ -1,6 +1,6 @@
 """Content extraction from HTML pages."""
 import json
-from typing import Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from bs4 import BeautifulSoup
 from app.utils.logger import get_logger
@@ -129,7 +129,7 @@ def extract_content(html: str) -> str:
     return text
 
 
-def extract_headings(html: str) -> Dict[str, list[str]]:
+def extract_headings(html: str) -> Dict[str, List[str]]:
     """
     Extract all headings from HTML.
     

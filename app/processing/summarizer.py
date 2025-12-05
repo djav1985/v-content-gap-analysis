@@ -1,6 +1,7 @@
 """Content summarization using LLM."""
 import asyncio
-from typing import Optional
+from typing import List, Optional
+
 from openai import AsyncOpenAI, APIError, RateLimitError, APIConnectionError
 import tiktoken
 
@@ -127,7 +128,7 @@ async def extract_topics(
     max_topics: int = 5,
     timeout: int = 30,
     max_retries: int = 3
-) -> Optional[list[str]]:
+) -> Optional[List[str]]:
     """
     Extract main topics from content using LLM with retry logic.
     

@@ -1,6 +1,7 @@
 """Text cleaning and normalization."""
 import re
-from typing import Optional
+from typing import List, Optional
+
 from app.utils.text import normalize_whitespace, clean_html_remnants
 from app.utils.logger import get_logger
 
@@ -41,7 +42,7 @@ def clean_text(text: str) -> str:
     return text
 
 
-def remove_boilerplate(text: str, common_phrases: Optional[list[str]] = None) -> str:
+def remove_boilerplate(text: str, common_phrases: Optional[List[str]] = None) -> str:
     """
     Remove common boilerplate text.
     

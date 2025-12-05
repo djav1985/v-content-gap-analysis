@@ -1,5 +1,5 @@
 """HTML page fetching functionality."""
-from typing import Optional
+from typing import Dict, List, Optional
 
 from app.utils.aio import fetch_urls_batch, SessionManager
 from app.utils.logger import get_logger
@@ -8,13 +8,13 @@ logger = get_logger(__name__)
 
 
 async def fetch_pages(
-    urls: list[str],
+    urls: List[str],
     max_concurrent: int = 10,
     timeout: int = 30,
     retry_attempts: int = 3,
     user_agent: str = "SEO-Gap-Analysis-Agent/1.0",
     session_manager: Optional[SessionManager] = None
-) -> dict[str, Optional[str]]:
+) -> Dict[str, Optional[str]]:
     """
     Fetch HTML content for multiple pages using shared session.
     
