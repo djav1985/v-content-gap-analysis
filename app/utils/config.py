@@ -4,8 +4,12 @@ from pathlib import Path
 from typing import Any, Dict
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ValidationError
 from pydantic_settings import BaseSettings
+
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ModelsConfig(BaseModel):
@@ -35,13 +39,13 @@ class ThresholdsConfig(BaseModel):
 class Settings(BaseSettings):
     """Main application settings."""
     site: str
-    chunk_size: int = 1500
-    max_chunks_per_page: int = 10
-    max_pages_per_site: int = 50
-    similarity_threshold: float = 0.45
-    max_concurrent_requests: int = 10
-    request_timeout: int = 30
-    retry_attempts: int = 3
+    chunk_size: int = Field(default=1500, gt=0, le=8000)
+    max_chunks_per_page: int = Field(default=10, gt=0, le=50)
+    max_pages_per_site: int = Field(default=50, gt=0, le=500)
+    similarity_threshold: float = Field(default=0.45, ge=0.0, le=1.0)
+    max_concurrent_requests: int = Field(default=10, gt=0, le=100)
+    request_timeout: int = Field(default=30, gt=0, le=300)
+    retry_attempts: int = Field(default=3, ge=1, le=10)
     user_agent: str = "SEO-Gap-Analysis-Agent/1.0"
     
     models: ModelsConfig = Field(default_factory=ModelsConfig)
@@ -51,6 +55,14 @@ class Settings(BaseSettings):
     
     # OpenAI API key from environment
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
+    
+    @field_validator('site')
+    @classmethod
+    def validate_site_url(cls, v: str) -> str:
+        """Validate site URL format."""
+        if not v or not v.startswith(('http://', 'https://')):
+            raise ValueError('Site URL must start with http:// or https://')
+        return v
 
     class Config:
         """Pydantic configuration."""
@@ -67,16 +79,34 @@ def load_config(config_path: str = "config/settings.yaml") -> Settings:
         
     Returns:
         Settings object
+        
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        ValidationError: If config data is invalid
     """
     config_file = Path(config_path)
     
     if not config_file.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
     
-    with open(config_file, "r", encoding="utf-8") as f:
-        config_data = yaml.safe_load(f)
-    
-    return Settings(**config_data)
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f)
+        
+        if not config_data:
+            raise ValueError("Configuration file is empty")
+        
+        # Validate and create Settings object
+        settings = Settings(**config_data)
+        logger.info(f"Successfully loaded configuration from {config_path}")
+        return settings
+        
+    except yaml.YAMLError as e:
+        logger.error(f"Failed to parse YAML configuration: {e}")
+        raise ValueError(f"Invalid YAML in configuration file: {e}")
+    except ValidationError as e:
+        logger.error(f"Configuration validation failed: {e}")
+        raise
 
 
 def load_competitors(competitors_path: str = "config/competitors.yaml") -> list[str]:
@@ -88,13 +118,38 @@ def load_competitors(competitors_path: str = "config/competitors.yaml") -> list[
         
     Returns:
         List of competitor sitemap URLs
+        
+    Raises:
+        FileNotFoundError: If competitors file doesn't exist
+        ValidationError: If competitor data is invalid
     """
     competitors_file = Path(competitors_path)
     
     if not competitors_file.exists():
         raise FileNotFoundError(f"Competitors file not found: {competitors_path}")
     
-    with open(competitors_file, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    
-    return data.get("competitors", [])
+    try:
+        with open(competitors_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        
+        if not data:
+            raise ValueError("Competitors file is empty")
+        
+        competitors = data.get("competitors", [])
+        
+        if not competitors:
+            raise ValueError("No competitors found in configuration")
+        
+        # Validate competitor URLs
+        from app.utils.models import CompetitorListModel
+        validated = CompetitorListModel(competitors=competitors)
+        
+        logger.info(f"Successfully loaded {len(validated.competitors)} competitors")
+        return validated.competitors
+        
+    except yaml.YAMLError as e:
+        logger.error(f"Failed to parse YAML competitors file: {e}")
+        raise ValueError(f"Invalid YAML in competitors file: {e}")
+    except ValidationError as e:
+        logger.error(f"Competitor validation failed: {e}")
+        raise

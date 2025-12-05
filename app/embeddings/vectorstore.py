@@ -1,8 +1,11 @@
 """Vector storage and retrieval using SQLite."""
 import numpy as np
 import aiosqlite
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
+from pydantic import ValidationError
+
 from app.utils.logger import get_logger
+from app.utils.models import ChunkModel, EmbeddingModel
 
 logger = get_logger(__name__)
 
@@ -44,7 +47,7 @@ async def store_embeddings_batch(
     model: str
 ) -> None:
     """
-    Store multiple embeddings in database.
+    Store multiple embeddings in database with optimized batch insert.
     
     Args:
         db_path: Path to database
@@ -52,13 +55,32 @@ async def store_embeddings_batch(
         embeddings: List of embedding vectors
         model: Model name
     """
+    # Validate embeddings
+    for chunk_id, embedding in zip(chunk_ids, embeddings):
+        if embedding is not None:
+            try:
+                EmbeddingModel(
+                    chunk_id=chunk_id,
+                    embedding=embedding.tolist(),
+                    model=model
+                )
+            except ValidationError as e:
+                logger.error(f"Embedding validation failed for chunk {chunk_id}: {e}")
+                raise
+    
     async with aiosqlite.connect(db_path) as db:
+        # Prepare batch data
         data = [
             (chunk_id, embedding.tobytes(), model)
             for chunk_id, embedding in zip(chunk_ids, embeddings)
             if embedding is not None
         ]
         
+        if not data:
+            logger.warning("No valid embeddings to store")
+            return
+        
+        # Use executemany for batch insert
         await db.executemany("""
             INSERT INTO embeddings (chunk_id, embedding, model)
             VALUES (?, ?, ?)
@@ -69,7 +91,7 @@ async def store_embeddings_batch(
         """, data)
         
         await db.commit()
-        logger.info(f"Stored {len(data)} embeddings")
+        logger.info(f"Stored {len(data)} embeddings in batch")
 
 
 async def get_embedding(db_path: str, chunk_id: int) -> Optional[np.ndarray]:
@@ -139,6 +161,55 @@ async def get_all_embeddings(
         return results
 
 
+async def store_chunks_batch(
+    db_path: str,
+    chunks_data: List[Dict[str, Any]]
+) -> List[int]:
+    """
+    Store multiple chunks in a single transaction.
+    
+    Args:
+        db_path: Path to database
+        chunks_data: List of chunk data dictionaries with keys:
+                    page_id, chunk_index, content, token_count
+        
+    Returns:
+        List of chunk IDs
+        
+    Raises:
+        ValidationError: If any chunk data is invalid
+    """
+    # Validate all chunks first
+    for chunk in chunks_data:
+        try:
+            ChunkModel(**chunk)
+        except ValidationError as e:
+            logger.error(f"Chunk validation failed: {e}")
+            raise
+    
+    chunk_ids = []
+    async with aiosqlite.connect(db_path) as db:
+        for chunk in chunks_data:
+            cursor = await db.execute("""
+                INSERT INTO chunks (page_id, chunk_index, content, token_count)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(page_id, chunk_index) DO UPDATE SET
+                    content=excluded.content,
+                    token_count=excluded.token_count
+            """, (
+                chunk['page_id'],
+                chunk['chunk_index'],
+                chunk['content'],
+                chunk['token_count']
+            ))
+            chunk_ids.append(cursor.lastrowid)
+        
+        await db.commit()
+        logger.info(f"Stored {len(chunk_ids)} chunks in batch")
+    
+    return chunk_ids
+
+
 async def store_chunk(
     db_path: str,
     page_id: int,
@@ -158,7 +229,22 @@ async def store_chunk(
         
     Returns:
         Chunk ID
+        
+    Raises:
+        ValidationError: If chunk data is invalid
     """
+    # Validate chunk data before storing
+    try:
+        chunk_model = ChunkModel(
+            page_id=page_id,
+            chunk_index=chunk_index,
+            content=content,
+            token_count=token_count
+        )
+    except ValidationError as e:
+        logger.error(f"Chunk validation failed: {e}")
+        raise
+    
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute("""
             INSERT INTO chunks (page_id, chunk_index, content, token_count)

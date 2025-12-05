@@ -1,11 +1,85 @@
 """Database utilities and schema management."""
 import aiosqlite
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
+from contextlib import asynccontextmanager
+from pydantic import ValidationError
+from enum import IntEnum
 
 from app.utils.logger import get_logger
+from app.utils.models import PageModel, GapModel
 
 logger = get_logger(__name__)
+
+
+class Priority(IntEnum):
+    """Priority levels for gaps."""
+    HIGH = 1
+    MEDIUM = 2
+    LOW = 3
+
+
+class DatabasePool:
+    """Simple connection pool for aiosqlite."""
+    
+    def __init__(self, db_path: str, max_connections: int = 5):
+        """
+        Initialize database pool.
+        
+        Args:
+            db_path: Path to database
+            max_connections: Maximum number of connections
+        """
+        self.db_path = db_path
+        self.max_connections = max_connections
+        self._connections: List[aiosqlite.Connection] = []
+        self._available: List[aiosqlite.Connection] = []
+        
+    async def get_connection(self) -> aiosqlite.Connection:
+        """Get a connection from the pool."""
+        if self._available:
+            return self._available.pop()
+        
+        if len(self._connections) < self.max_connections:
+            conn = await aiosqlite.connect(self.db_path)
+            self._connections.append(conn)
+            return conn
+        
+        # Wait for an available connection
+        import asyncio
+        while not self._available:
+            await asyncio.sleep(0.01)
+        return self._available.pop()
+    
+    def release_connection(self, conn: aiosqlite.Connection):
+        """Release a connection back to the pool."""
+        if conn in self._connections:
+            self._available.append(conn)
+    
+    async def close_all(self):
+        """Close all connections."""
+        for conn in self._connections:
+            await conn.close()
+        self._connections.clear()
+        self._available.clear()
+
+
+@asynccontextmanager
+async def get_db_connection(db_path: str):
+    """
+    Context manager for database connections.
+    
+    Args:
+        db_path: Path to database
+        
+    Yields:
+        Database connection
+    """
+    conn = await aiosqlite.connect(db_path)
+    try:
+        yield conn
+    finally:
+        await conn.close()
 
 
 async def init_database(db_path: str) -> None:
@@ -117,7 +191,27 @@ async def store_page(
         
     Returns:
         Page ID
+        
+    Raises:
+        ValidationError: If page data is invalid
     """
+    # Validate page data before storing
+    try:
+        page_model = PageModel(
+            url=url,
+            domain=domain,
+            is_primary=is_primary,
+            title=title,
+            description=description,
+            h1=h1,
+            content_text=content_text,
+            word_count=word_count,
+            schema_data=schema_data
+        )
+    except ValidationError as e:
+        logger.error(f"Page validation failed for {url}: {e}")
+        raise
+    
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute("""
             INSERT INTO pages (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data)
@@ -153,3 +247,114 @@ async def get_page_id(db_path: str, url: str) -> Optional[int]:
         cursor = await db.execute("SELECT id FROM pages WHERE url = ?", (url,))
         row = await cursor.fetchone()
         return row[0] if row else None
+
+
+async def store_pages_batch(
+    db_path: str,
+    pages: List[Dict[str, Any]]
+) -> List[int]:
+    """
+    Store multiple pages in a single transaction.
+    
+    Args:
+        db_path: Path to database
+        pages: List of page data dictionaries
+        
+    Returns:
+        List of page IDs
+        
+    Raises:
+        ValidationError: If any page data is invalid
+    """
+    # Validate all pages first
+    validated_pages = []
+    for page in pages:
+        try:
+            page_model = PageModel(**page)
+            validated_pages.append(page)
+        except ValidationError as e:
+            logger.error(f"Page validation failed for {page.get('url')}: {e}")
+            raise
+    
+    page_ids = []
+    async with aiosqlite.connect(db_path) as db:
+        for page in validated_pages:
+            cursor = await db.execute("""
+                INSERT INTO pages (url, domain, is_primary, title, description, h1, content_text, word_count, schema_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(url) DO UPDATE SET
+                    title=excluded.title,
+                    description=excluded.description,
+                    h1=excluded.h1,
+                    content_text=excluded.content_text,
+                    word_count=excluded.word_count,
+                    schema_data=excluded.schema_data,
+                    last_crawled=CURRENT_TIMESTAMP
+            """, (
+                page['url'],
+                page['domain'],
+                page['is_primary'],
+                page.get('title'),
+                page.get('description'),
+                page.get('h1'),
+                page.get('content_text'),
+                page.get('word_count'),
+                page.get('schema_data')
+            ))
+            page_ids.append(cursor.lastrowid)
+        
+        await db.commit()
+        logger.info(f"Stored {len(page_ids)} pages in batch")
+    
+    return page_ids
+
+
+async def store_gaps_batch(
+    db_path: str,
+    gaps: List[Dict[str, Any]]
+) -> None:
+    """
+    Store multiple gaps in a single transaction.
+    
+    Args:
+        db_path: Path to database
+        gaps: List of gap data dictionaries
+        
+    Raises:
+        ValidationError: If any gap data is invalid
+    """
+    # Validate all gaps first
+    for gap in gaps:
+        try:
+            GapModel(**gap)
+        except ValidationError as e:
+            logger.error(f"Gap validation failed: {e}")
+            raise
+    
+    # Convert priority string to enum value
+    def get_priority_value(priority_str: Optional[str]) -> int:
+        """Convert priority string to database integer value."""
+        priority_map = {
+            'high': Priority.HIGH,
+            'medium': Priority.MEDIUM,
+            'low': Priority.LOW
+        }
+        return priority_map.get(priority_str, Priority.LOW)
+    
+    async with aiosqlite.connect(db_path) as db:
+        await db.executemany("""
+            INSERT INTO gaps (competitor_url, gap_type, similarity_score, closest_match_url, analysis, priority)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, [
+            (
+                gap['competitor_url'],
+                gap['gap_type'],
+                gap.get('similarity_score'),
+                gap.get('closest_match_url'),
+                gap.get('analysis'),
+                get_priority_value(gap.get('priority'))
+            )
+            for gap in gaps
+        ])
+        await db.commit()
+        logger.info(f"Stored {len(gaps)} gaps in batch")

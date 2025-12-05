@@ -6,7 +6,7 @@ from typing import Optional
 
 from app.utils.config import load_config, load_competitors
 from app.utils.logger import setup_logger
-from app.utils.database import init_database, store_page, get_page_id, store_chunk
+from app.utils.database import init_database, store_page, get_page_id, store_gaps_batch
 from app.utils.text import extract_domain, count_tokens
 
 from app.sitemap.fetcher import fetch_sitemaps
@@ -20,7 +20,7 @@ from app.processing.chunker import chunk_text
 from app.processing.metadata import extract_metadata_signals
 
 from app.embeddings.generator import generate_embeddings_batch
-from app.embeddings.vectorstore import store_embeddings_batch, get_all_embeddings
+from app.embeddings.vectorstore import store_embeddings_batch, get_all_embeddings, store_chunk
 from app.embeddings.comparer import find_content_gaps
 
 from app.analysis.gap_detector import get_all_gaps
@@ -221,20 +221,9 @@ async def analyze_gaps(db_path: str, config: dict) -> dict:
         threshold=config.similarity_threshold
     )
     
-    # Store gaps in database
-    import aiosqlite
-    async with aiosqlite.connect(db_path) as db:
-        for gap in content_gaps:
-            await db.execute("""
-                INSERT INTO gaps (competitor_url, gap_type, similarity_score, closest_match_url)
-                VALUES (?, ?, ?, ?)
-            """, (
-                gap['competitor_url'],
-                gap['gap_type'],
-                gap['similarity_score'],
-                gap['closest_match_url']
-            ))
-        await db.commit()
+    # Store gaps in database using batch operation
+    if content_gaps:
+        await store_gaps_batch(db_path, content_gaps)
     
     # Get all gaps
     gaps = await get_all_gaps(
