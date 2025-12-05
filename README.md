@@ -199,31 +199,51 @@ SQLite database (`data/pages.db`) structure:
 
 ## Technologies
 
-- **Python 3.11+**: Core language
-- **aiohttp**: Async HTTP requests
-- **BeautifulSoup4/Selectolax**: HTML parsing
-- **OpenAI API**: Embeddings and LLM analysis
-- **scikit-learn**: Clustering and similarity
-- **SQLite**: Data persistence
-- **tiktoken**: Token counting
+- **Python 3.11+**: Core language with modern async/await patterns
+- **aiohttp**: Async HTTP requests with connection pooling and retry logic
+- **BeautifulSoup4/Selectolax**: HTML parsing and content extraction
+- **OpenAI API**: Embeddings (text-embedding-3-large) and LLM analysis (gpt-4o-mini)
+- **scikit-learn**: Clustering and similarity computation with DBSCAN
+- **SQLite**: Data persistence with optimized upsert operations
+- **tiktoken**: Accurate token counting for chunking and cost estimation
+- **Pydantic**: Runtime data validation and settings management
+- **PyYAML**: Configuration file parsing with validation
 
 ## Development
 
 ### Code Quality
 
 All code follows:
-- PEP8 style guidelines
-- Type hints for all functions
-- Comprehensive docstrings
-- Error handling with logging
+- **PEP8 style guidelines**: Consistent formatting and naming conventions
+- **Type hints for all functions**: Complete type annotations using `typing` module
+- **Comprehensive docstrings**: Detailed documentation for all public functions and classes
+- **Error handling with structured logging**: Context-aware logging with error classification
+- **Resilient retry logic**: Exponential backoff for API calls and network requests
+- **Database transaction safety**: Proper upsert handling with correct ID returns
+- **Input validation**: Pydantic models for data validation before database operations
+
+### Quality Assurance Features
+
+- **Structured Logging**: All logs include contextual information (URLs, counts, error types)
+- **Error Propagation**: Exceptions are properly wrapped and classified for debugging
+- **Retry Mechanisms**: Configurable retry logic with exponential backoff for:
+  - HTTP requests (rate limiting aware)
+  - OpenAI API calls (embedding and LLM)
+  - Database operations (transaction safety)
+- **Deduplication**: Gap detection includes URL-based deduplication to avoid redundant reports
+- **Percentage Metrics**: All comparisons include human-readable percentage differences
+- **Concurrency Controls**: Semaphore-based batching prevents resource exhaustion
 
 ### Adding New Features
 
 1. Create module in appropriate `app/` subdirectory
 2. Follow existing patterns for async operations
-3. Add logging for observability
-4. Update configuration if needed
-5. Update this README
+3. Add structured logging with context for observability
+4. Implement retry logic for external calls
+5. Validate inputs using Pydantic models
+6. Add proper type hints and docstrings
+7. Update configuration if needed
+8. Update this README and CHANGELOG
 
 ## Troubleshooting
 
@@ -289,6 +309,17 @@ Built with modern Python async patterns and OpenAI's powerful embedding and lang
 
 ---
 
-**Version**: 1.0.0  
+**Version**: 1.1.0  
 **Author**: SEO Gap Analysis Team  
-**Last Updated**: 2024-12-04
+**Last Updated**: 2024-12-05
+
+## Recent Improvements (v1.1.0)
+
+- **Enhanced Type Safety**: Complete type hints across all modules using proper `typing` imports
+- **Improved Error Handling**: Structured logging with contextual information and error classification
+- **Better Retry Logic**: Exponential backoff with configurable limits for all external calls
+- **Database Reliability**: Fixed upsert ID handling to return correct IDs after conflict resolution
+- **Deduplication**: Gap detection now deduplicates by URL to prevent redundant recommendations
+- **Metrics Enhancement**: Added percentage calculations and human-readable comparisons
+- **Concurrency Controls**: Improved semaphore-based batching for API calls
+- **Validation Strengthening**: Pydantic validation before all database writes

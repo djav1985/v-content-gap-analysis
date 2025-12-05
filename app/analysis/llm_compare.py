@@ -1,6 +1,7 @@
 """LLM-based content comparison."""
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from openai import AsyncOpenAI, APIError, RateLimitError, APIConnectionError
 from app.utils.logger import get_logger
 
@@ -201,7 +202,7 @@ Include:
 async def suggest_rewrites(
     content: str,
     url: str,
-    issues: list[str],
+    issues: List[str],
     api_key: str,
     model: str = "gpt-4o-mini",
     timeout: int = 60,

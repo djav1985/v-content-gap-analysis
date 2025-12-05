@@ -1,6 +1,7 @@
 """Gap detection and analysis."""
 import aiosqlite
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Set
+
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -18,14 +19,15 @@ async def detect_missing_pages(
         similarity_threshold: Threshold for considering pages similar
         
     Returns:
-        List of missing page gaps
+        List of missing page gaps (deduplicated)
     """
     gaps = []
+    seen_urls: Set[str] = set()  # Track URLs to avoid duplicates
     
     async with aiosqlite.connect(db_path) as db:
         # Get all gaps below threshold
         cursor = await db.execute("""
-            SELECT competitor_url, closest_match_url, similarity_score
+            SELECT DISTINCT competitor_url, closest_match_url, similarity_score
             FROM gaps
             WHERE gap_type = 'missing_content'
             AND similarity_score < ?
@@ -35,15 +37,33 @@ async def detect_missing_pages(
         rows = await cursor.fetchall()
         
         for row in rows:
+            competitor_url = row[0]
+            
+            # Skip if we've already processed this URL
+            if competitor_url in seen_urls:
+                continue
+            
+            seen_urls.add(competitor_url)
+            
+            # Calculate priority based on similarity score
+            similarity_score = row[2]
+            if similarity_score < 0.2:
+                priority = 'high'
+            elif similarity_score < 0.35:
+                priority = 'medium'
+            else:
+                priority = 'low'
+            
             gaps.append({
                 'type': 'missing_page',
-                'competitor_url': row[0],
+                'competitor_url': competitor_url,
                 'closest_match_url': row[1],
-                'similarity_score': row[2],
-                'priority': 'high' if row[2] < 0.3 else 'medium'
+                'similarity_score': similarity_score,
+                'similarity_percentage': f"{similarity_score * 100:.1f}%",
+                'priority': priority
             })
     
-    logger.info(f"Detected {len(gaps)} missing pages")
+    logger.info(f"Detected {len(gaps)} unique missing pages (deduplicated from {len(rows)} raw gaps)")
     return gaps
 
 
@@ -59,9 +79,10 @@ async def detect_thin_content(
         ratio_threshold: Word count ratio threshold
         
     Returns:
-        List of thin content gaps
+        List of thin content gaps (deduplicated by primary URL)
     """
     gaps = []
+    seen_primary_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
         # Compare word counts
@@ -78,22 +99,46 @@ async def detect_thin_content(
             AND p2.is_primary = 0
             AND p1.word_count > 0
             AND CAST(p2.word_count AS FLOAT) / CAST(p1.word_count AS FLOAT) > ?
+            ORDER BY ratio DESC
         """, (ratio_threshold,))
         
         rows = await cursor.fetchall()
         
         for row in rows:
+            primary_url = row[0]
+            
+            # Only keep the worst case for each primary URL
+            if primary_url in seen_primary_urls:
+                continue
+            
+            seen_primary_urls.add(primary_url)
+            
+            ratio = row[4]
+            
+            # Calculate priority based on ratio
+            if ratio > 5.0:
+                priority = 'high'
+            elif ratio > 4.0:
+                priority = 'medium'
+            else:
+                priority = 'low'
+            
+            # Calculate percentage difference
+            word_diff_percentage = ((row[3] - row[1]) / row[1]) * 100
+            
             gaps.append({
                 'type': 'thin_content',
-                'primary_url': row[0],
+                'primary_url': primary_url,
                 'primary_word_count': row[1],
                 'competitor_url': row[2],
                 'competitor_word_count': row[3],
-                'ratio': row[4],
-                'priority': 'high' if row[4] > 5.0 else 'medium'
+                'ratio': ratio,
+                'word_difference': row[3] - row[1],
+                'word_diff_percentage': f"{word_diff_percentage:.1f}%",
+                'priority': priority
             })
     
-    logger.info(f"Detected {len(gaps)} thin content pages")
+    logger.info(f"Detected {len(gaps)} unique thin content pages (deduplicated from {len(rows)} comparisons)")
     return gaps
 
 
@@ -105,22 +150,31 @@ async def detect_metadata_gaps(db_path: str) -> List[Dict[str, Any]]:
         db_path: Path to database
         
     Returns:
-        List of metadata gaps
+        List of metadata gaps (deduplicated by URL)
     """
     gaps = []
+    seen_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
         # Find pages with missing metadata
         cursor = await db.execute("""
-            SELECT url, title, description, h1
+            SELECT DISTINCT url, title, description, h1
             FROM pages
             WHERE is_primary = 1
             AND (title IS NULL OR description IS NULL OR h1 IS NULL)
+            ORDER BY url
         """)
         
         rows = await cursor.fetchall()
         
         for row in rows:
+            url = row[0]
+            
+            if url in seen_urls:
+                continue
+            
+            seen_urls.add(url)
+            
             missing = []
             if not row[1]:
                 missing.append('title')
@@ -129,14 +183,24 @@ async def detect_metadata_gaps(db_path: str) -> List[Dict[str, Any]]:
             if not row[3]:
                 missing.append('h1')
             
+            # Calculate severity
+            missing_count = len(missing)
+            if 'title' in missing or missing_count >= 2:
+                priority = 'high'
+            elif missing_count >= 1:
+                priority = 'medium'
+            else:
+                priority = 'low'
+            
             gaps.append({
                 'type': 'metadata_gap',
-                'url': row[0],
+                'url': url,
                 'missing_elements': missing,
-                'priority': 'high' if 'title' in missing else 'medium'
+                'missing_count': missing_count,
+                'priority': priority
             })
     
-    logger.info(f"Detected {len(gaps)} metadata gaps")
+    logger.info(f"Detected {len(gaps)} unique metadata gaps")
     return gaps
 
 
@@ -148,14 +212,15 @@ async def detect_schema_gaps(db_path: str) -> List[Dict[str, Any]]:
         db_path: Path to database
         
     Returns:
-        List of schema gaps
+        List of schema gaps (deduplicated by URL)
     """
     gaps = []
+    seen_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
         # Find primary pages without schema
         cursor = await db.execute("""
-            SELECT p1.url
+            SELECT DISTINCT p1.url
             FROM pages p1
             WHERE p1.is_primary = 1
             AND (p1.schema_data IS NULL OR p1.schema_data = '')
@@ -165,18 +230,26 @@ async def detect_schema_gaps(db_path: str) -> List[Dict[str, Any]]:
                 AND p2.schema_data IS NOT NULL
                 AND p2.schema_data != ''
             )
+            ORDER BY p1.url
         """)
         
         rows = await cursor.fetchall()
         
         for row in rows:
+            url = row[0]
+            
+            if url in seen_urls:
+                continue
+            
+            seen_urls.add(url)
+            
             gaps.append({
                 'type': 'schema_gap',
-                'url': row[0],
+                'url': url,
                 'priority': 'medium'
             })
     
-    logger.info(f"Detected {len(gaps)} schema gaps")
+    logger.info(f"Detected {len(gaps)} unique schema gaps")
     return gaps
 
 
