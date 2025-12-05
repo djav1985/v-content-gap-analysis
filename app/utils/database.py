@@ -4,11 +4,19 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 from pydantic import ValidationError
+from enum import IntEnum
 
 from app.utils.logger import get_logger
 from app.utils.models import PageModel, GapModel
 
 logger = get_logger(__name__)
+
+
+class Priority(IntEnum):
+    """Priority levels for gaps."""
+    HIGH = 1
+    MEDIUM = 2
+    LOW = 3
 
 
 class DatabasePool:
@@ -334,7 +342,7 @@ async def store_gaps_batch(
                 gap.get('similarity_score'),
                 gap.get('closest_match_url'),
                 gap.get('analysis'),
-                1 if gap.get('priority') == 'high' else (2 if gap.get('priority') == 'medium' else 3)
+                Priority.HIGH if gap.get('priority') == 'high' else (Priority.MEDIUM if gap.get('priority') == 'medium' else Priority.LOW)
             )
             for gap in gaps
         ])

@@ -57,7 +57,8 @@ async def fetch_url(
     session: aiohttp.ClientSession,
     url: str,
     timeout: int = 30,
-    retry_attempts: int = 3
+    retry_attempts: int = 3,
+    headers: Optional[Dict[str, str]] = None
 ) -> Optional[str]:
     """
     Fetch URL content with retry logic.
@@ -67,13 +68,18 @@ async def fetch_url(
         url: URL to fetch
         timeout: Request timeout in seconds
         retry_attempts: Number of retry attempts
+        headers: Optional HTTP headers for this request
         
     Returns:
         Response text or None if failed
     """
     for attempt in range(retry_attempts):
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
+            async with session.get(
+                url, 
+                timeout=aiohttp.ClientTimeout(total=timeout),
+                headers=headers
+            ) as response:
                 if response.status == 200:
                     return await response.text()
                 else:
@@ -120,7 +126,7 @@ async def fetch_urls_batch(
     
     async def fetch_with_semaphore(sess: aiohttp.ClientSession, url: str):
         async with semaphore:
-            content = await fetch_url(sess, url, timeout, retry_attempts)
+            content = await fetch_url(sess, url, timeout, retry_attempts, headers)
             return url, content
     
     # Use provided session or create a new one
@@ -177,17 +183,14 @@ async def fetch_urls_concurrent(
     
     session = await session_manager.get_session()
     
-    # Update headers if provided
-    if headers:
-        session._default_headers.update(headers)
-    
     try:
+        # Pass headers to fetch_urls_batch which will use them per request
         results = await fetch_urls_batch(
             urls,
             max_concurrent,
             timeout,
             retry_attempts,
-            headers=None,  # Already set on session
+            headers=headers,
             session=session
         )
         return results

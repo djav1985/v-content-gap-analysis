@@ -1,7 +1,7 @@
 """Vector storage and retrieval using SQLite."""
 import numpy as np
 import aiosqlite
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from pydantic import ValidationError
 
 from app.utils.logger import get_logger

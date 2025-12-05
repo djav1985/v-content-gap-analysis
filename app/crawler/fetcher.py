@@ -43,16 +43,13 @@ async def fetch_pages(
     
     session = await session_manager.get_session()
     
-    # Update session headers
-    session._default_headers.update(headers)
-    
     try:
         results = await fetch_urls_batch(
             urls=urls,
             max_concurrent=max_concurrent,
             timeout=timeout,
             retry_attempts=retry_attempts,
-            headers=None,  # Already set on session
+            headers=headers,
             session=session
         )
         

@@ -84,16 +84,13 @@ async def fetch_sitemaps(
     
     session = await session_manager.get_session()
     
-    # Update session headers
-    session._default_headers.update(headers)
-    
     try:
         # Fetch sitemaps concurrently with semaphore
         semaphore = asyncio.Semaphore(max_concurrent)
         
         async def fetch_with_semaphore(url: str):
             async with semaphore:
-                content = await fetch_url(session, url, timeout, retry_attempts)
+                content = await fetch_url(session, url, timeout, retry_attempts, headers)
                 if content:
                     logger.info(f"Successfully fetched sitemap: {url}")
                 else:
