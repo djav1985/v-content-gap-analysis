@@ -86,20 +86,6 @@ async def get_db_connection(db_path: str):
         await conn.close()
 
 
-async def get_db(db_path: str):
-    """
-    Get database connection with foreign keys enabled.
-    Helper function for context manager usage.
-    
-    Args:
-        db_path: Path to database
-        
-    Returns:
-        Async context manager for database connection
-    """
-    return get_db_connection(db_path)
-
-
 async def init_database(db_path: str) -> None:
     """
     Initialize database schema.

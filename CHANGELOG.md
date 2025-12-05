@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved
 
+#### Code Quality and Maintainability
+- **Constants for Gap Types and Priorities**: Added module-level constants to `gap_detector.py`
+  - Defined `GAP_TYPE_MISSING_CONTENT`, `GAP_TYPE_THIN_CONTENT`, `GAP_TYPE_METADATA_GAP`, `GAP_TYPE_SCHEMA_GAP`
+  - Defined `PRIORITY_HIGH`, `PRIORITY_MEDIUM`, `PRIORITY_LOW`
+  - Replaced hardcoded strings throughout the module
+  - Prevents typos and improves maintainability
+- **Null Safety**: Improved null checking in schema gap priority assignment
+  - Changed from `similarity_score and similarity_score > 0.7` to explicit null checking
+  - Uses `similarity_score is not None and similarity_score > 0.7` for clarity
+- **Code Cleanup**: Removed redundant `get_db()` helper function from database.py
+  - Simplified to use `get_db_connection()` context manager directly
+
 #### Schema Gap Detection Logic
 - **Matched Competitor Comparison**: Completely rewrote `detect_schema_gaps()` to tie comparisons to nearest competitor pages
   - Previous implementation: Checked if ANY competitor had schema data

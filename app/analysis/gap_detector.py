@@ -7,6 +7,18 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+# Gap type constants
+GAP_TYPE_MISSING_CONTENT = 'missing_content'
+GAP_TYPE_THIN_CONTENT = 'thin_content'
+GAP_TYPE_METADATA_GAP = 'metadata_gap'
+GAP_TYPE_SCHEMA_GAP = 'schema_gap'
+
+# Priority constants
+PRIORITY_HIGH = 'high'
+PRIORITY_MEDIUM = 'medium'
+PRIORITY_LOW = 'low'
+
+
 async def detect_missing_pages(
     db_path: str,
     similarity_threshold: float = 0.45
@@ -31,10 +43,10 @@ async def detect_missing_pages(
         cursor = await db.execute("""
             SELECT DISTINCT competitor_url, closest_match_url, similarity_score
             FROM gaps
-            WHERE gap_type = 'missing_content'
+            WHERE gap_type = ?
             AND similarity_score < ?
             ORDER BY similarity_score ASC
-        """, (similarity_threshold,))
+        """, (GAP_TYPE_MISSING_CONTENT, similarity_threshold,))
         
         rows = await cursor.fetchall()
         
@@ -50,11 +62,11 @@ async def detect_missing_pages(
             # Calculate priority based on similarity score
             similarity_score = row[2]
             if similarity_score < 0.2:
-                priority = 'high'
+                priority = PRIORITY_HIGH
             elif similarity_score < 0.35:
-                priority = 'medium'
+                priority = PRIORITY_MEDIUM
             else:
-                priority = 'low'
+                priority = PRIORITY_LOW
             
             gaps.append({
                 'type': 'missing_page',
@@ -121,17 +133,17 @@ async def detect_thin_content(
             
             # Calculate priority based on ratio
             if ratio > 5.0:
-                priority = 'high'
+                priority = PRIORITY_HIGH
             elif ratio > 4.0:
-                priority = 'medium'
+                priority = PRIORITY_MEDIUM
             else:
-                priority = 'low'
+                priority = PRIORITY_LOW
             
             # Calculate percentage difference
             word_diff_percentage = ((row[3] - row[1]) / row[1]) * 100
             
             gaps.append({
-                'type': 'thin_content',
+                'type': GAP_TYPE_THIN_CONTENT,
                 'primary_url': primary_url,
                 'primary_word_count': row[1],
                 'competitor_url': row[2],
@@ -192,14 +204,14 @@ async def detect_metadata_gaps(db_path: str) -> List[Dict[str, Any]]:
             # Calculate severity
             missing_count = len(missing)
             if 'title' in missing or missing_count >= 2:
-                priority = 'high'
+                priority = PRIORITY_HIGH
             elif missing_count >= 1:
-                priority = 'medium'
+                priority = PRIORITY_MEDIUM
             else:
-                priority = 'low'
+                priority = PRIORITY_LOW
             
             gaps.append({
-                'type': 'metadata_gap',
+                'type': GAP_TYPE_METADATA_GAP,
                 'url': url,
                 'missing_elements': missing,
                 'missing_count': missing_count,
@@ -245,9 +257,9 @@ async def detect_schema_gaps(db_path: str) -> List[Dict[str, Any]]:
             AND p2.is_primary = 0
             AND p2.schema_data IS NOT NULL
             AND p2.schema_data != ''
-            AND g.gap_type = 'missing_content'
+            AND g.gap_type = ?
             ORDER BY p1.url, g.similarity_score DESC
-        """)
+        """, (GAP_TYPE_MISSING_CONTENT,))
         
         rows = await cursor.fetchall()
         
@@ -263,15 +275,15 @@ async def detect_schema_gaps(db_path: str) -> List[Dict[str, Any]]:
             processed_urls.add(primary_url)
             
             # Higher priority if it's a close match
-            if similarity_score and similarity_score > 0.7:
-                priority = 'high'
-            elif similarity_score and similarity_score > 0.5:
-                priority = 'medium'
+            if similarity_score is not None and similarity_score > 0.7:
+                priority = PRIORITY_HIGH
+            elif similarity_score is not None and similarity_score > 0.5:
+                priority = PRIORITY_MEDIUM
             else:
-                priority = 'low'
+                priority = PRIORITY_LOW
             
             gaps.append({
-                'type': 'schema_gap',
+                'type': GAP_TYPE_SCHEMA_GAP,
                 'url': primary_url,
                 'competitor_url': competitor_url,
                 'similarity_score': similarity_score,
