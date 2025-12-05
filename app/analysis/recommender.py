@@ -1,5 +1,6 @@
 """Generate recommendations based on gap analysis."""
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)

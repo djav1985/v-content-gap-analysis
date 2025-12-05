@@ -1,15 +1,18 @@
 """Async utilities for HTTP requests."""
 import asyncio
-from typing import Optional, Dict, List
+import logging
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 import aiohttp
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, log_with_context
 
 logger = get_logger(__name__)
 
 # Constants
 DEFAULT_PER_HOST_LIMIT = 5  # Default maximum concurrent connections per host
+DEFAULT_RETRY_BACKOFF_BASE = 2  # Base for exponential backoff
+MAX_RETRY_WAIT = 60  # Maximum wait time between retries (seconds)
 
 
 class SessionManager:
@@ -61,10 +64,11 @@ async def fetch_url(
     url: str,
     timeout: int = 30,
     retry_attempts: int = 3,
-    headers: Optional[Dict[str, str]] = None
+    headers: Optional[Dict[str, str]] = None,
+    backoff_base: float = DEFAULT_RETRY_BACKOFF_BASE
 ) -> Optional[str]:
     """
-    Fetch URL content with retry logic.
+    Fetch URL content with retry logic and exponential backoff.
     
     Args:
         session: Aiohttp client session
@@ -72,10 +76,13 @@ async def fetch_url(
         timeout: Request timeout in seconds
         retry_attempts: Number of retry attempts
         headers: Optional HTTP headers for this request
+        backoff_base: Base for exponential backoff calculation
         
     Returns:
         Response text or None if failed
     """
+    last_error = None
+    
     for attempt in range(retry_attempts):
         try:
             async with session.get(
@@ -85,31 +92,85 @@ async def fetch_url(
             ) as response:
                 if response.status == 200:
                     return await response.text()
+                elif response.status == 429:
+                    # Rate limited - use longer backoff
+                    wait_time = min(backoff_base ** (attempt + 2), MAX_RETRY_WAIT)
+                    log_with_context(
+                        logger, logging.WARNING,
+                        f"Rate limited fetching {url}, waiting {wait_time}s",
+                        context={'url': url, 'attempt': attempt + 1, 'status': 429}
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+                elif response.status >= 500:
+                    # Server error - retry with backoff
+                    log_with_context(
+                        logger, logging.WARNING,
+                        f"Server error fetching {url}: HTTP {response.status}",
+                        context={'url': url, 'attempt': attempt + 1, 'status': response.status}
+                    )
                 else:
-                    logger.warning(f"Failed to fetch {url}: HTTP {response.status}")
+                    # Client error - don't retry
+                    log_with_context(
+                        logger, logging.WARNING,
+                        f"Failed to fetch {url}: HTTP {response.status}",
+                        context={'url': url, 'status': response.status},
+                        error_type='client_error'
+                    )
+                    return None
                     
-        except asyncio.TimeoutError:
-            logger.warning(f"Timeout fetching {url} (attempt {attempt + 1}/{retry_attempts})")
+        except asyncio.TimeoutError as e:
+            last_error = e
+            log_with_context(
+                logger, logging.WARNING,
+                f"Timeout fetching {url}",
+                context={'url': url, 'attempt': attempt + 1, 'max_attempts': retry_attempts},
+                error_type='timeout'
+            )
         except aiohttp.ClientError as e:
-            logger.warning(f"Client error fetching {url}: {e} (attempt {attempt + 1}/{retry_attempts})")
+            last_error = e
+            log_with_context(
+                logger, logging.WARNING,
+                f"Client error fetching {url}: {e}",
+                context={'url': url, 'attempt': attempt + 1},
+                error_type='client_error'
+            )
         except Exception as e:
-            logger.error(f"Unexpected error fetching {url}: {e}")
-            break
+            last_error = e
+            log_with_context(
+                logger, logging.ERROR,
+                f"Unexpected error fetching {url}: {e}",
+                context={'url': url},
+                error_type='unexpected',
+                exc_info=True
+            )
+            return None
         
+        # Exponential backoff for retries
         if attempt < retry_attempts - 1:
-            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+            wait_time = min(backoff_base ** attempt, MAX_RETRY_WAIT)
+            await asyncio.sleep(wait_time)
+    
+    # All retries failed
+    if last_error:
+        log_with_context(
+            logger, logging.ERROR,
+            f"Failed to fetch {url} after {retry_attempts} attempts",
+            context={'url': url, 'last_error': str(last_error)},
+            error_type='max_retries_exceeded'
+        )
     
     return None
 
 
 async def fetch_urls_batch(
-    urls: list[str],
+    urls: List[str],
     max_concurrent: int = 10,
     timeout: int = 30,
     retry_attempts: int = 3,
-    headers: Optional[dict] = None,
+    headers: Optional[Dict[str, str]] = None,
     session: Optional[aiohttp.ClientSession] = None
-) -> dict[str, Optional[str]]:
+) -> Dict[str, Optional[str]]:
     """
     Fetch multiple URLs concurrently.
     

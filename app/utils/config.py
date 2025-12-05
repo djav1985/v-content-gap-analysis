@@ -1,7 +1,7 @@
 """Configuration management for the SEO Gap Analysis Agent."""
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, ValidationError
@@ -82,19 +82,24 @@ def load_config(config_path: str = "config/settings.yaml") -> Settings:
         
     Raises:
         FileNotFoundError: If config file doesn't exist
+        ValueError: If config file is invalid or empty
         ValidationError: If config data is invalid
     """
     config_file = Path(config_path)
     
     if not config_file.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        error_msg = f"Configuration file not found: {config_path}"
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
     
     try:
         with open(config_file, "r", encoding="utf-8") as f:
             config_data = yaml.safe_load(f)
         
         if not config_data:
-            raise ValueError("Configuration file is empty")
+            error_msg = "Configuration file is empty"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Validate and create Settings object
         settings = Settings(**config_data)
@@ -102,14 +107,19 @@ def load_config(config_path: str = "config/settings.yaml") -> Settings:
         return settings
         
     except yaml.YAMLError as e:
-        logger.error(f"Failed to parse YAML configuration: {e}")
-        raise ValueError(f"Invalid YAML in configuration file: {e}")
+        error_msg = f"Failed to parse YAML configuration: {e}"
+        logger.error(error_msg)
+        raise ValueError(f"Invalid YAML in configuration file: {e}") from e
     except ValidationError as e:
         logger.error(f"Configuration validation failed: {e}")
         raise
+    except Exception as e:
+        error_msg = f"Unexpected error loading configuration: {e}"
+        logger.error(error_msg, exc_info=True)
+        raise ValueError(error_msg) from e
 
 
-def load_competitors(competitors_path: str = "config/competitors.yaml") -> list[str]:
+def load_competitors(competitors_path: str = "config/competitors.yaml") -> List[str]:
     """
     Load competitor sitemaps from YAML file.
     
@@ -121,24 +131,31 @@ def load_competitors(competitors_path: str = "config/competitors.yaml") -> list[
         
     Raises:
         FileNotFoundError: If competitors file doesn't exist
+        ValueError: If competitor file is invalid or empty
         ValidationError: If competitor data is invalid
     """
     competitors_file = Path(competitors_path)
     
     if not competitors_file.exists():
-        raise FileNotFoundError(f"Competitors file not found: {competitors_path}")
+        error_msg = f"Competitors file not found: {competitors_path}"
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
     
     try:
         with open(competitors_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         
         if not data:
-            raise ValueError("Competitors file is empty")
+            error_msg = "Competitors file is empty"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         competitors = data.get("competitors", [])
         
         if not competitors:
-            raise ValueError("No competitors found in configuration")
+            error_msg = "No competitors found in configuration"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Validate competitor URLs
         from app.utils.models import CompetitorListModel
@@ -148,8 +165,13 @@ def load_competitors(competitors_path: str = "config/competitors.yaml") -> list[
         return validated.competitors
         
     except yaml.YAMLError as e:
-        logger.error(f"Failed to parse YAML competitors file: {e}")
-        raise ValueError(f"Invalid YAML in competitors file: {e}")
+        error_msg = f"Failed to parse YAML competitors file: {e}"
+        logger.error(error_msg)
+        raise ValueError(f"Invalid YAML in competitors file: {e}") from e
     except ValidationError as e:
         logger.error(f"Competitor validation failed: {e}")
         raise
+    except Exception as e:
+        error_msg = f"Unexpected error loading competitors: {e}"
+        logger.error(error_msg, exc_info=True)
+        raise ValueError(error_msg) from e

@@ -1,5 +1,6 @@
 """Metadata extraction and processing."""
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)

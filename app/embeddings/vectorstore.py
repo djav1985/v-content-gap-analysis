@@ -190,19 +190,34 @@ async def store_chunks_batch(
     chunk_ids = []
     async with aiosqlite.connect(db_path) as db:
         for chunk in chunks_data:
-            cursor = await db.execute("""
-                INSERT INTO chunks (page_id, chunk_index, content, token_count)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(page_id, chunk_index) DO UPDATE SET
-                    content=excluded.content,
-                    token_count=excluded.token_count
-            """, (
-                chunk['page_id'],
-                chunk['chunk_index'],
-                chunk['content'],
-                chunk['token_count']
-            ))
-            chunk_ids.append(cursor.lastrowid)
+            # Check if chunk exists
+            cursor = await db.execute(
+                "SELECT id FROM chunks WHERE page_id = ? AND chunk_index = ?",
+                (chunk['page_id'], chunk['chunk_index'])
+            )
+            row = await cursor.fetchone()
+            
+            if row:
+                # Update existing chunk
+                chunk_id = row[0]
+                await db.execute("""
+                    UPDATE chunks SET content=?, token_count=?
+                    WHERE id = ?
+                """, (chunk['content'], chunk['token_count'], chunk_id))
+            else:
+                # Insert new chunk
+                cursor = await db.execute("""
+                    INSERT INTO chunks (page_id, chunk_index, content, token_count)
+                    VALUES (?, ?, ?, ?)
+                """, (
+                    chunk['page_id'],
+                    chunk['chunk_index'],
+                    chunk['content'],
+                    chunk['token_count']
+                ))
+                chunk_id = cursor.lastrowid
+            
+            chunk_ids.append(chunk_id)
         
         await db.commit()
         logger.info(f"Stored {len(chunk_ids)} chunks in batch")
@@ -246,15 +261,27 @@ async def store_chunk(
         raise
     
     async with aiosqlite.connect(db_path) as db:
-        cursor = await db.execute("""
-            INSERT INTO chunks (page_id, chunk_index, content, token_count)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(page_id, chunk_index) DO UPDATE SET
-                content=excluded.content,
-                token_count=excluded.token_count
-        """, (page_id, chunk_index, content, token_count))
+        # Check if chunk exists
+        cursor = await db.execute(
+            "SELECT id FROM chunks WHERE page_id = ? AND chunk_index = ?",
+            (page_id, chunk_index)
+        )
+        row = await cursor.fetchone()
         
-        chunk_id = cursor.lastrowid
+        if row:
+            # Update existing chunk
+            chunk_id = row[0]
+            await db.execute("""
+                UPDATE chunks SET content=?, token_count=?
+                WHERE id = ?
+            """, (content, token_count, chunk_id))
+        else:
+            # Insert new chunk
+            cursor = await db.execute("""
+                INSERT INTO chunks (page_id, chunk_index, content, token_count)
+                VALUES (?, ?, ?, ?)
+            """, (page_id, chunk_index, content, token_count))
+            chunk_id = cursor.lastrowid
+        
         await db.commit()
-        
         return chunk_id

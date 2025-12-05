@@ -5,6 +5,118 @@ All notable changes to the SEO Gap Analysis Agent will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2024-12-05
+
+### Fixed
+
+#### Type Hints and Consistency
+- **Type Annotations**: Aligned all type hints across modules to use proper `typing` imports (`List`, `Dict`, `Optional`, `Any`)
+- **Consistency**: Standardized return types and parameter annotations in all functions across:
+  - `app/crawler/*` (fetcher.py, extractor.py)
+  - `app/processing/*` (cleaner.py, chunker.py, metadata.py, summarizer.py)
+  - `app/embeddings/*` (generator.py, vectorstore.py, comparer.py)
+  - `app/analysis/*` (gap_detector.py, llm_compare.py, recommender.py)
+  - `main.py` orchestration layer
+
+#### Database Reliability
+- **SQLite Upsert Handling**: Fixed `store_page`, `store_pages_batch`, `store_chunk`, and `store_chunks_batch` to return correct IDs
+  - Changed from relying on `lastrowid` after `ON CONFLICT` (which returns 0) to explicit SELECT-then-UPDATE/INSERT pattern
+  - Ensures chunk and embedding relationships maintain integrity
+- **Bulk Insert Optimization**: Improved batch operations to handle upserts correctly while maintaining performance
+- **Transaction Safety**: All batch operations now properly commit only after all items are processed
+
+### Improved
+
+#### Error Handling and Resilience
+- **Structured Logging**: Added `StructuredFormatter` and `log_with_context()` helper to logger.py
+  - Logs now include contextual metadata (URLs, counts, status codes)
+  - Error classification with `error_type` field for easier debugging
+  - Support for custom context dictionaries in all log statements
+- **Config Loading**: Enhanced error propagation in `load_config()` and `load_competitors()`:
+  - Wrapped exceptions with proper error messages
+  - Added explicit error types for different failure modes
+  - Better validation error messages from Pydantic
+- **Main Orchestrator**: Comprehensive try-except blocks in `main.py`:
+  - Graceful handling of sitemap parsing failures
+  - Continued execution after individual competitor failures
+  - Structured error logging for all critical paths
+
+#### Async Operations and Retry Logic
+- **HTTP Requests**: Enhanced `fetch_url()` in aio.py:
+  - Configurable exponential backoff base
+  - Rate limit detection (HTTP 429) with extended backoff
+  - Separate handling for client errors vs server errors
+  - Maximum retry wait cap to prevent excessive delays
+  - Structured logging with request context
+- **OpenAI API Calls**: Improved retry semantics in:
+  - `generate_embeddings_batch()`: Better batch-level error handling
+  - `summarize_content()`: Consistent retry pattern
+  - `compare_pages()`: Rate limit aware retries
+  - All LLM calls now use exponential backoff with configurable limits
+- **Concurrency Controls**: Semaphore-based batching prevents resource exhaustion
+  - Bounded parallelism for embedding generation
+  - Per-host connection limits in SessionManager
+  - Configurable batch sizes and concurrent request limits
+
+#### Gap Detection and Reporting
+- **Deduplication**: All gap detection functions now deduplicate by URL:
+  - `detect_missing_pages()`: Tracks seen competitor URLs
+  - `detect_thin_content()`: Only reports worst case per primary URL
+  - `detect_metadata_gaps()`: Deduplicates by primary URL
+  - `detect_schema_gaps()`: Ensures unique URL reporting
+- **Enhanced Metrics**: Added human-readable percentages and calculations:
+  - Similarity scores displayed as percentages
+  - Word count differences shown as both absolute and percentage
+  - Missing element counts for metadata gaps
+- **Better Thresholds**: Refined priority assignment based on severity:
+  - Missing pages: High (<20% similarity), Medium (<35%), Low (>=35%)
+  - Thin content: High (>5x ratio), Medium (>4x), Low (>3x)
+  - Metadata gaps: High (missing title or >=2 elements), Medium (>=1 element)
+- **SQL Optimization**: Added `DISTINCT` and `ORDER BY` clauses to prevent duplicate rows from database queries
+
+### Added
+
+#### Logging Infrastructure
+- `StructuredFormatter` class for context-aware log formatting
+- `log_with_context()` helper function for structured logging
+- Support for `error_type` classification in all error logs
+- Context dictionaries with relevant metadata (URLs, counts, IDs)
+
+#### Configuration Validation
+- Explicit error messages for missing or invalid configuration files
+- Better validation feedback from Pydantic models
+- Chained exceptions using `raise ... from e` pattern for traceable errors
+
+#### Documentation
+- Updated README.md with:
+  - Detailed code quality standards
+  - Quality assurance features section
+  - Recent improvements summary (v1.1.0)
+  - Enhanced technology descriptions
+- Updated CHANGELOG.md with comprehensive v1.1.0 release notes
+
+### Technical Details
+
+- **Python Version**: 3.11+ (unchanged)
+- **Database**: SQLite with corrected upsert behavior
+- **API**: OpenAI with improved retry logic and rate limit handling
+- **Architecture**: Enhanced async/await patterns with better error boundaries
+- **Error Handling**: Comprehensive logging and graceful degradation
+- **Code Quality**: Full type hints compliance, PEP8 adherence, complete docstrings
+
+### Reason for Changes
+
+This release focuses on production readiness through improved reliability, observability, and correctness:
+
+1. **Type Safety**: Complete type hint alignment prevents runtime type errors and improves IDE support
+2. **Database Correctness**: Fixed upsert ID handling prevents data integrity issues with chunks and embeddings
+3. **Error Resilience**: Structured logging and better error handling make debugging and monitoring much easier
+4. **Deduplication**: Prevents redundant gap reporting and improves report quality
+5. **Retry Logic**: Intelligent retries with backoff reduce transient failures from network and API issues
+6. **Metrics Clarity**: Percentage-based metrics make reports more actionable for stakeholders
+
+---
+
 ## [1.0.0] - 2024-12-04
 
 ### Added
