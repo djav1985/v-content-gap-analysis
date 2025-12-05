@@ -5,6 +5,55 @@ All notable changes to the SEO Gap Analysis Agent will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2024-12-05
+
+### Fixed
+
+#### Critical Bug Fixes
+- **NameError in `detect_metadata_gaps()`**: Fixed undefined variable `seen_urls` in `app/analysis/gap_detector.py` line 173
+  - Changed to use the correctly defined `processed_urls` variable
+  - Prevents runtime crash when detecting metadata gaps
+- **JSON-LD Parsing Null Guard**: Added null/whitespace validation in `extract_schema()` in `app/crawler/extractor.py`
+  - Added check for `script.string` being None or empty before parsing
+  - Enhanced exception handling to include TypeError and AttributeError
+  - Prevents crashes on malformed or empty JSON-LD script tags
+
+#### Database Foreign Key Enforcement
+- **SQLite Foreign Keys**: Enabled `PRAGMA foreign_keys = ON` in all database connections
+  - Updated `get_connection()` in DatabasePool class
+  - Updated `get_db_connection()` context manager
+  - Updated `init_database()` function
+  - Added pragma to all `aiosqlite.connect()` calls in:
+    - `app/utils/database.py` (store_page, get_page_id, store_pages_batch, store_gaps_batch)
+    - `app/embeddings/vectorstore.py` (all embedding and chunk storage functions)
+    - `app/analysis/gap_detector.py` (all gap detection functions)
+  - Ensures cascading deletes work correctly (e.g., deleting a page removes its chunks and embeddings)
+  - Maintains referential integrity across all foreign key relationships
+
+### Improved
+
+#### Schema Gap Detection Logic
+- **Matched Competitor Comparison**: Completely rewrote `detect_schema_gaps()` to tie comparisons to nearest competitor pages
+  - Previous implementation: Checked if ANY competitor had schema data
+  - New implementation: Compares only to matched/nearest competitor pages based on similarity
+  - Joins with gaps table to find closest matches for each primary page
+  - Reduces false positives significantly by only flagging gaps where similar competitors have schema
+  - Prioritizes gaps based on similarity score (high: >0.7, medium: >0.5, low: ≤0.5)
+  - Returns competitor URL and similarity score for better context
+
+#### Documentation Enhancements
+- **Sitemap Index Handling**: Added comprehensive documentation in README.md
+  - Clarified behavior: Parser returns both sitemap URLs and direct page URLs from index files
+  - Documented non-recursive approach (returns sitemap URLs for orchestrator to handle)
+  - Explained deduplication and normalization process
+  - Covers standard sitemaps, sitemap indexes, and mixed formats
+- **Database Upsert Strategy**: Added detailed section explaining deduplication approach
+  - Documented check-then-upsert pattern for pages and chunks tables
+  - Explained ON CONFLICT handling for embeddings table
+  - Described application-level deduplication for gaps table
+  - Outlined foreign key cascade behavior and enforcement
+  - Clarifies prevention of unbounded duplicates across all tables
+
 ## [1.1.0] - 2024-12-05
 
 ### Fixed

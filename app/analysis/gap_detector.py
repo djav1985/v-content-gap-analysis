@@ -25,6 +25,8 @@ async def detect_missing_pages(
     processed_urls: Set[str] = set()  # Track URLs to avoid duplicates
     
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         # Get all gaps below threshold
         cursor = await db.execute("""
             SELECT DISTINCT competitor_url, closest_match_url, similarity_score
@@ -85,6 +87,8 @@ async def detect_thin_content(
     processed_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         # Compare word counts
         cursor = await db.execute("""
             SELECT 
@@ -156,6 +160,8 @@ async def detect_metadata_gaps(db_path: str) -> List[Dict[str, Any]]:
     processed_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         # Find pages with missing metadata
         cursor = await db.execute("""
             SELECT DISTINCT url, title, description, h1
@@ -170,10 +176,10 @@ async def detect_metadata_gaps(db_path: str) -> List[Dict[str, Any]]:
         for row in rows:
             url = row[0]
             
-            if url in seen_urls:
+            if url in processed_urls:
                 continue
             
-            seen_urls.add(url)
+            processed_urls.add(url)
             
             missing = []
             if not row[1]:
@@ -206,7 +212,10 @@ async def detect_metadata_gaps(db_path: str) -> List[Dict[str, Any]]:
 
 async def detect_schema_gaps(db_path: str) -> List[Dict[str, Any]]:
     """
-    Detect pages missing schema markup.
+    Detect pages missing schema markup compared to their nearest competitor matches.
+    
+    This improved version ties schema comparisons to matched/nearest competitor pages
+    rather than checking for the existence of any competitor with schema.
     
     Args:
         db_path: Path to database
@@ -218,38 +227,58 @@ async def detect_schema_gaps(db_path: str) -> List[Dict[str, Any]]:
     processed_urls: Set[str] = set()
     
     async with aiosqlite.connect(db_path) as db:
-        # Find primary pages without schema
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
+        
+        # Find primary pages without schema that have matched competitors with schema
+        # Using gaps table to find nearest competitors, then check if those have schema
         cursor = await db.execute("""
-            SELECT DISTINCT p1.url
+            SELECT DISTINCT 
+                p1.url as primary_url,
+                p2.url as competitor_url,
+                g.similarity_score
             FROM pages p1
+            JOIN gaps g ON g.closest_match_url = p1.url
+            JOIN pages p2 ON p2.url = g.competitor_url
             WHERE p1.is_primary = 1
             AND (p1.schema_data IS NULL OR p1.schema_data = '')
-            AND EXISTS (
-                SELECT 1 FROM pages p2
-                WHERE p2.is_primary = 0
-                AND p2.schema_data IS NOT NULL
-                AND p2.schema_data != ''
-            )
-            ORDER BY p1.url
+            AND p2.is_primary = 0
+            AND p2.schema_data IS NOT NULL
+            AND p2.schema_data != ''
+            AND g.gap_type = 'missing_content'
+            ORDER BY p1.url, g.similarity_score DESC
         """)
         
         rows = await cursor.fetchall()
         
         for row in rows:
-            url = row[0]
+            primary_url = row[0]
+            competitor_url = row[1]
+            similarity_score = row[2]
             
-            if url in processed_urls:
+            # Only keep one gap per primary URL (the one with highest similarity)
+            if primary_url in processed_urls:
                 continue
             
-            processed_urls.add(url)
+            processed_urls.add(primary_url)
+            
+            # Higher priority if it's a close match
+            if similarity_score and similarity_score > 0.7:
+                priority = 'high'
+            elif similarity_score and similarity_score > 0.5:
+                priority = 'medium'
+            else:
+                priority = 'low'
             
             gaps.append({
                 'type': 'schema_gap',
-                'url': url,
-                'priority': 'medium'
+                'url': primary_url,
+                'competitor_url': competitor_url,
+                'similarity_score': similarity_score,
+                'priority': priority
             })
     
-    logger.info(f"Detected {len(gaps)} unique schema gaps")
+    logger.info(f"Detected {len(gaps)} unique schema gaps based on matched competitors")
     return gaps
 
 

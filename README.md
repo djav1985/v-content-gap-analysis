@@ -81,12 +81,26 @@ python main.py
 ```
 
 The agent will:
-1. Fetch and parse all sitemaps
+1. Fetch and parse all sitemaps (including sitemap index files)
 2. Crawl pages from your site and competitors
 3. Extract and clean content
 4. Generate semantic embeddings
 5. Perform gap analysis
 6. Generate comprehensive reports
+
+#### Sitemap Handling
+
+The parser supports multiple sitemap formats:
+
+- **Standard Sitemaps**: Direct list of URLs in `<url><loc>` elements
+- **Sitemap Index Files**: Contains references to multiple sitemaps in `<sitemap><loc>` elements
+- **Mixed Format**: Both sitemap references and direct URLs in the same file
+
+**Behavior**: When a sitemap index is detected (presence of `<sitemap>` elements), the parser extracts both:
+- Nested sitemap URLs from `<sitemap><loc>` elements
+- Direct page URLs from `<url><loc>` elements
+
+All URLs are normalized and deduplicated. The current implementation does **not** recursively fetch nested sitemaps - it returns the sitemap URLs for manual processing or further fetching by the crawler orchestrator.
 
 ### Output
 
@@ -196,6 +210,46 @@ SQLite database (`data/pages.db`) structure:
 - **chunks**: Content chunks with token counts
 - **embeddings**: Vector embeddings (BLOB storage)
 - **gaps**: Detected gaps with analysis
+
+### Deduplication and Upsert Strategy
+
+The database implements a comprehensive deduplication strategy to prevent unbounded duplicates:
+
+#### Pages Table
+- **Primary Key**: `url` (UNIQUE constraint)
+- **Strategy**: Check-then-upsert pattern
+  1. Query for existing page by URL
+  2. If exists: UPDATE with new data and refresh `last_crawled` timestamp
+  3. If not exists: INSERT new page record
+- **Result**: Returns the page ID (either existing or newly created)
+
+#### Chunks Table
+- **Unique Constraint**: `(page_id, chunk_index)` combination
+- **Strategy**: Check-then-upsert pattern
+  1. Query for existing chunk by page_id and chunk_index
+  2. If exists: UPDATE chunk content
+  3. If not exists: INSERT new chunk
+- **Foreign Key**: `page_id` references `pages(id)` with `ON DELETE CASCADE`
+
+#### Embeddings Table
+- **Unique Constraint**: `chunk_id` (one embedding per chunk)
+- **Strategy**: INSERT with `ON CONFLICT` clause
+  - Uses `ON CONFLICT(chunk_id) DO UPDATE` for automatic upsert
+  - Updates embedding, model, and created_at timestamp on conflict
+- **Foreign Key**: `chunk_id` references `chunks(id)` with `ON DELETE CASCADE`
+
+#### Gaps Table
+- **No Unique Constraint**: Multiple gap records allowed
+- **Strategy**: Deduplication handled in application logic
+  - Gap detection functions use `processed_urls` sets to track and deduplicate
+  - Prevents reporting same URL multiple times in a single analysis run
+  - Historical gaps from previous runs are preserved
+
+#### Foreign Key Enforcement
+All database connections enable foreign key constraints via `PRAGMA foreign_keys = ON`. This ensures:
+- Cascading deletes propagate correctly (e.g., deleting a page removes its chunks and embeddings)
+- Referential integrity is maintained across all tables
+- Orphaned records are automatically prevented
 
 ## Technologies
 

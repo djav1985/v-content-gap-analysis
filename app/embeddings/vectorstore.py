@@ -26,6 +26,8 @@ async def store_embedding(
         model: Model name
     """
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         embedding_blob = embedding.tobytes()
         
         await db.execute("""
@@ -69,6 +71,8 @@ async def store_embeddings_batch(
                 raise
     
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         # Prepare batch data
         data = [
             (chunk_id, embedding.tobytes(), model)
@@ -106,6 +110,8 @@ async def get_embedding(db_path: str, chunk_id: int) -> Optional[np.ndarray]:
         Embedding vector or None
     """
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         cursor = await db.execute(
             "SELECT embedding FROM embeddings WHERE chunk_id = ?",
             (chunk_id,)
@@ -132,6 +138,8 @@ async def get_all_embeddings(
         List of tuples: (chunk_id, page_id, embedding, url)
     """
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         if is_primary is not None:
             query = """
                 SELECT e.chunk_id, c.page_id, e.embedding, p.url
@@ -189,6 +197,8 @@ async def store_chunks_batch(
     
     chunk_ids = []
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         for chunk in chunks_data:
             # Check if chunk exists
             cursor = await db.execute(
@@ -261,6 +271,8 @@ async def store_chunk(
         raise
     
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign key constraints
+        await db.execute("PRAGMA foreign_keys = ON")
         # Check if chunk exists
         cursor = await db.execute(
             "SELECT id FROM chunks WHERE page_id = ? AND chunk_index = ?",
